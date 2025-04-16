@@ -14,6 +14,7 @@ from config_params import (
     IS_STAFF,
     PUCKS_PER_DEWAR_SECTOR,
     SAMPLE_TIMER_DELAY,
+    MountState
 )
 from threads import DataFetchRunnable
 
@@ -126,6 +127,7 @@ class DewarTree(QtWidgets.QTreeView):
             table_data['Resolution'] = req_data['resolution']
             table_data['Energy (eV)'] = req_data['energy']
             table_data['Wavelength'] = req_data['wavelength']
+            table_data['Data path'] = req_data['directory']
             text = """<table border='1' style='border-collapse: collapse;'>
             <tr>
             <th style='border: 1px solid black;'>Parameter</th>
@@ -193,7 +195,7 @@ class DewarTree(QtWidgets.QTreeView):
         font.setOverline(False)
         item.setFont(font)
 
-    def set_mounted_sample(self, item):
+    def set_mounted_sample(self, item, sample_name=None):
         # Formats the text of the item that is passed in as the mounted sample
         item.setForeground(QtGui.QColor("red"))
         font = QtGui.QFont()
@@ -201,6 +203,12 @@ class DewarTree(QtWidgets.QTreeView):
         font.setItalic(True)
         font.setOverline(True)
         item.setFont(font)
+        if self.parent.mountedPin_pv.get_pin_state() is not None:
+            state = self.parent.mountedPin_pv.get_pin_state()
+            mount_state = MountState(state)
+            if sample_name is None:
+                sample_name = item.text()
+            item.setText(sample_name + MountState.get_text(mount_state))
 
     def refreshTreeDewarView(self, get_latest_pucks=False):
         puck = ""
@@ -317,6 +325,7 @@ class DewarTree(QtWidgets.QTreeView):
                 self.set_mounted_sample(item, position_s)
             else:
                 self.set_unmounted_sample(item)
+
             if sample_id == self.parent.mountedPin_pv.get():
                 mountedIndex = self.model.indexFromItem(item)
             # looking for the selected item
@@ -335,7 +344,6 @@ class DewarTree(QtWidgets.QTreeView):
             elif mountedIndex:
                 current_index = mountedIndex
                 item = self.model.itemFromIndex(mountedIndex)
-                self.set_mounted_sample(item)
             elif selectedIndex:
                 current_index = selectedIndex
         elif collectionRunning and mountedIndex:
@@ -381,17 +389,21 @@ class DewarTree(QtWidgets.QTreeView):
 
     def is_proposal_member(self, proposal_id) -> bool:
         # Check if the user running LSDC is part of the sample's proposal
-        if proposal_id not in self.proposal_membership:
-            r = requests.get(f"{os.environ['NSLS2_API_URL']}/v1/proposal/{proposal_id}")
-            r.raise_for_status()
-            response = r.json()['proposal']
-            if "users" in response and getpass.getuser() in [
-                user["username"] for user in response["users"] if "username" in user
-            ]:
-                self.proposal_membership[proposal_id] = True
-            else:
-                logger.info(f"Users not found in response: {response}")
-                self.proposal_membership[proposal_id] = False
+        try:
+            if proposal_id not in self.proposal_membership:
+                r = requests.get(f"{os.environ['NSLS2_API_URL']}/v1/proposal/{proposal_id}")
+                r.raise_for_status()
+                response = r.json()['proposal']
+                if "users" in response and getpass.getuser() in [
+                    user["username"] for user in response["users"] if "username" in user
+                ]:
+                    self.proposal_membership[proposal_id] = True
+                else:
+                    logger.info(f"Users not found in response: {response}")
+                    self.proposal_membership[proposal_id] = False
+        except Exception as e:
+            logger.exception(e)
+            return False
         return self.proposal_membership[proposal_id]
 
     def create_request_item(self, request) -> QtGui.QStandardItem:
