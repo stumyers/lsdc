@@ -32,6 +32,8 @@ jobs:
           echo "DOCKER_BINARY=${DOCKER_BINARY}" >> $GITHUB_ENV
 
       - uses: actions/checkout@v2
+        with:
+          persist-credentials: false
 
       - name: Set up Python ${{ matrix.python-version }} with conda
         uses: conda-incubator/setup-miniconda@v2
