@@ -338,6 +338,12 @@ class ControlMain(QtWidgets.QMainWindow):
         treeSelectMode = QtWidgets.QAbstractItemView.ExtendedSelection
         self.dewarTree.setSelectionMode(treeSelectMode)
         self.dewarTree.setSelectionBehavior(treeSelectBehavior)
+        self.follow_current_request_checkbox = QtWidgets.QCheckBox(
+            "Follow current request in tree"
+        )
+        self.follow_current_request_checkbox.stateChanged.connect(
+            self.dewarTree.toggle_follow_request
+        )
         hBoxRadioLayout1 = QtWidgets.QHBoxLayout()
         self.viewRadioGroup = QtWidgets.QButtonGroup()
         self.priorityViewRadio = QtWidgets.QRadioButton("PriorityView")
@@ -355,6 +361,7 @@ class ControlMain(QtWidgets.QMainWindow):
         self.viewRadioGroup.addButton(self.dewarViewRadio)
         vBoxDFlayout.addLayout(hBoxRadioLayout1)
         vBoxDFlayout.addWidget(self.dewarTree)
+        vBoxDFlayout.addWidget(self.follow_current_request_checkbox)
         queueSelectedButton = QtWidgets.QPushButton("Queue All Selected")
         queueSelectedButton.clicked.connect(self.dewarTree.queueAllSelectedCB)
         deQueueSelectedButton = QtWidgets.QPushButton("deQueue All Selected")
@@ -402,12 +409,14 @@ class ControlMain(QtWidgets.QMainWindow):
         hBoxTreeButtsLayout = QtWidgets.QHBoxLayout()
         vBoxTreeButtsLayoutLeft = QtWidgets.QVBoxLayout()
         vBoxTreeButtsLayoutRight = QtWidgets.QVBoxLayout()
+        vBoxTreeButtsLayoutLeft.addWidget(expandAllButton)
         vBoxTreeButtsLayoutLeft.addWidget(runQueueButton)
         vBoxTreeButtsLayoutLeft.addWidget(mountSampleButton)
         vBoxTreeButtsLayoutLeft.addWidget(self.pauseQueueButton)
         vBoxTreeButtsLayoutLeft.addWidget(queueSelectedButton)
         vBoxTreeButtsLayoutLeft.addWidget(self.popUserScreen)
         vBoxTreeButtsLayoutLeft.addWidget(warmupButton)
+        vBoxTreeButtsLayoutRight.addWidget(collapseAllButton)
         vBoxTreeButtsLayoutRight.addWidget(self.closeShutterButton)
         vBoxTreeButtsLayoutRight.addWidget(unmountSampleButton)
         vBoxTreeButtsLayoutRight.addWidget(self.parkRobotButton)
@@ -3639,6 +3648,20 @@ class ControlMain(QtWidgets.QMainWindow):
         setBlConfig("rasterDefaultTime", float(self.exp_time_ledit.text()))
         setBlConfig("rasterDefaultTrans", float(self.transmission_ledit.text()))
 
+
+        self.selectedSampleID = self.mountedPin_pv.get()
+        sample_data = db_lib.getSampleByID(self.selectedSampleID)
+        prop_dir = self.get_proposal_directory(sample_data["proposalID"])
+
+        self.selectedSampleRequest = daq_utils.createDefaultRequest(
+            self.selectedSampleID
+        )
+        self.dataPathGB.setFilePrefix_ledit(
+            str(self.selectedSampleRequest["request_obj"]["file_prefix"])
+        )
+        self.dataPathGB.setDataPath_ledit(
+            str(self.selectedSampleRequest["request_obj"]["directory"])
+        )
         self.addSampleRequestCB(rasterDef)
         return  # short circuit
 
@@ -4166,13 +4189,8 @@ class ControlMain(QtWidgets.QMainWindow):
 
     def addSampleRequestCB(self, rasterDef=None, selectedSampleID=None):
         if self.selectedSampleID != None:
-            try:
-                sample = db_lib.getSampleByID(self.selectedSampleID)
-                propNum = sample["proposalID"]
-            except KeyError:
-                propNum = 999999
-            if propNum == None:
-                propNum = 999999
+            sample = db_lib.getSampleByID(self.selectedSampleID)
+            propNum = sample.get("proposalID", 999999)
             if propNum != daq_utils.getProposalID():
                 logger.info("setting proposal in add request")
                 daq_utils.setProposalID(propNum, createVisit=True)
@@ -5313,7 +5331,7 @@ class ControlMain(QtWidgets.QMainWindow):
         self.beamSize_pv.add_callback(self.beamSizeChangedCB)
 
         self.treeChanged_pv = PV(daq_utils.beamlineComm + "live_q_change_flag")
-        self.refreshTreeSignal.connect(self.dewarTree.refreshTree)
+        self.refreshTreeSignal.connect(self.dewarTree.refreshTreeThreaded)
         self.treeChanged_pv.add_callback(self.treeChangedCB)
         self.mountedPin_pv = custom_pv.MountedPinPV(daq_utils.beamlineComm + "mounted_pin")
         self.mountedPinSignal.connect(self.processMountedPin)
